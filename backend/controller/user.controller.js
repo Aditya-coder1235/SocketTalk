@@ -2,7 +2,6 @@ const User = require("../models/user.model")
 const bcrypt = require("bcrypt")
 const jwt = require("jsonwebtoken")
 
-// signup
 exports.signup = async (req, res) => {
     try {
 
@@ -39,7 +38,6 @@ exports.signup = async (req, res) => {
 }
 
 
-// login
 exports.login = async (req, res) => {
     // console.log(req.body)
     try {
@@ -95,8 +93,32 @@ exports.login = async (req, res) => {
     }
 }
 
+exports.allUsers = async (req, res) => {
+    try {
+        const keyword = req.query.search ? {
+            $or: [
+                {name: {$regex: req.query.search, $options:"i"}},
+                { email: { $regex: req.query.search, $options: "i" }}
+            ]
+        } : {};
 
-// logout
+        const users=await User.find(keyword).find({_id:{$ne:req.user.id}})
+
+        // console.log(keyword);
+
+        res.status(200).json({
+            success: true,
+            search: users
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Server error"
+        });
+    }
+};
+
 exports.logout = async (req, res) => {
     res.clearCookie("token")
 
@@ -105,3 +127,31 @@ exports.logout = async (req, res) => {
         message: "Logged out successfully"
     })
 }
+
+exports.me = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id).select("name email pic");
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                pic: user.pic,
+            },
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: "Failed to fetch current user",
+        });
+    }
+};
