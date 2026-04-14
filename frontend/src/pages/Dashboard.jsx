@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
 import { useNavigate } from "react-router-dom";
@@ -13,23 +13,20 @@ const messageBelongsToChat = (message, chatId) =>
 
 const Dashboard = () => {
     const navigate = useNavigate();
-    const socketRef = useRef(null);
 
-    // Session and user list
     const [currentUser, setCurrentUser] = useState(null);
     const [search, setSearch] = useState("");
     const [users, setUsers] = useState([]);
     const [selectedUser, setSelectedUser] = useState(null);
 
-    // Active conversation
     const [activeChat, setActiveChat] = useState(null);
     const [messages, setMessages] = useState([]);
     const [messageText, setMessageText] = useState("");
 
-    // UI state
     const [loadingUsers, setLoadingUsers] = useState(false);
     const [loadingMessages, setLoadingMessages] = useState(false);
     const [sendingMessage, setSendingMessage] = useState(false);
+    const [socket, setSocket] = useState(null);
 
     const currentUserId = currentUser?.id;
     const activeChatId = activeChat?._id;
@@ -53,27 +50,41 @@ const Dashboard = () => {
     useEffect(() => {
         if (!currentUserId) return;
 
-        socketRef.current = io(API_BASE_URL, {
+        const newSocket = io(API_BASE_URL, {
             withCredentials: true,
             auth: {
                 userId: currentUserId,
             },
         });
+        setSocket(newSocket);
 
-        socketRef.current.on("message received", (newMessage) => {
+        return () => {
+            newSocket.disconnect();
+            setSocket(null);
+        };
+    }, [currentUserId]);
+
+    useEffect(() => {
+        if (!socket) return;
+
+        const handleMessageReceived = (newMessage) => {
             if (!messageBelongsToChat(newMessage, activeChatId)) {
                 return;
             }
 
             setMessages((prev) => [...prev, newMessage]);
-        });
+        };
+
+        socket.on("message received", handleMessageReceived);
 
         return () => {
-            socketRef.current?.disconnect();
+            socket.off("message received", handleMessageReceived);
         };
-    }, [currentUserId, activeChatId]);
+    }, [socket, activeChatId]);
 
     const fetchUsers = useCallback(async (searchTerm = "") => {
+        if (!currentUserId) return;
+
         try {
             setLoadingUsers(true);
             const res = await axios.get(`${API_BASE_URL}/api/auth`, {
@@ -88,7 +99,7 @@ const Dashboard = () => {
         } finally {
             setLoadingUsers(false);
         }
-    }, [navigate]);
+    }, [currentUserId, navigate]);
 
     useEffect(() => {
         if (!currentUserId) return;
@@ -113,7 +124,7 @@ const Dashboard = () => {
             const chat = chatRes.data.chat;
             setActiveChat(chat);
 
-            socketRef.current?.emit("join chat", chat._id);
+            socket?.emit("join chat", chat._id);
 
             const msgRes = await axios.get(`${API_BASE_URL}/api/message/${chat._id}`, {
                 withCredentials: true,
@@ -151,7 +162,7 @@ const Dashboard = () => {
 
             setMessages((prev) => [...prev, newMessage]);
             setMessageText("");
-            socketRef.current?.emit("new message", newMessage);
+            socket?.emit("new message", newMessage);
         } catch (error) {
             alert(error?.response?.data?.message || "Failed to send message");
         } finally {
